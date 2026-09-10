@@ -1,11 +1,13 @@
 // SendPulse Login/Install URL. SendPulse opens this in the user's browser as
 // GET ?code=…&lang=… — on first install AND every later "open app" click.
 // We exchange the code, find-or-create the install, and redirect to settings.
-import { functionsBase, serviceClient } from "../_shared/db.ts";
+import { serviceClient } from "../_shared/db.ts";
 import { randomToken } from "../_shared/token.ts";
 import { exchangeCode } from "../_shared/sendpulse.ts";
 
 const DEV_INSTALL_SECRET = Deno.env.get("DEV_INSTALL_SECRET"); // manual testing only
+// Static settings page (GitHub Pages) — Supabase can't serve HTML itself.
+const APP_URL = Deno.env.get("APP_URL") ?? "https://grezun.github.io/pdf-quotes-for-chatbots/";
 
 function errorPage(message: string, status = 400): Response {
   return new Response(
@@ -26,7 +28,7 @@ Deno.serve(async (req: Request) => {
   // Dev backdoor: create a test install without SendPulse, guarded by a secret.
   if (!code && DEV_INSTALL_SECRET && url.searchParams.get("dev") === DEV_INSTALL_SECRET) {
     const install = await createInstall(db, null);
-    return Response.redirect(`${functionsBase()}/settings?token=${install.settings_token}`, 302);
+    return Response.redirect(`${APP_URL}?token=${install.settings_token}`, 302);
   }
 
   if (!code) return errorPage("Missing authorization code.");
@@ -69,7 +71,7 @@ Deno.serve(async (req: Request) => {
     settingsToken = install.settings_token;
   }
 
-  return Response.redirect(`${functionsBase()}/settings?token=${settingsToken}`, 302);
+  return Response.redirect(`${APP_URL}?token=${settingsToken}`, 302);
 });
 
 async function createInstall(
