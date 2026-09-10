@@ -1,6 +1,8 @@
 // Renders the fixed quote template with pdf-lib (A4). Uses supplied Unicode
 // fonts when given, otherwise falls back to built-in Helvetica (Latin-1 only).
-import { PDFDocument, PDFFont, PDFPage, rgb, StandardFonts } from "npm:pdf-lib@1.17.1";
+// Hebrew is drawn with RTL word ordering, in mixed-font runs (the Hebrew face
+// carries no Latin glyphs and vice versa).
+import { PDFDocument, PDFFont, rgb, StandardFonts } from "npm:pdf-lib@1.17.1";
 import fontkit from "npm:@pdf-lib/fontkit@1.1.1";
 import { formatMoney } from "./pricing.ts";
 
@@ -26,9 +28,12 @@ export type QuotePdfInput = {
   currency: string;
   quote_number: string;
   date: string; // already formatted, e.g. "10 Sep 2026"
-  // Unicode fonts (e.g. Noto Sans TTF bytes). Without them Helvetica is used,
-  // which only encodes Latin-1 — non-Latin text is transliterated to "?".
-  fonts?: { regular: Uint8Array; bold: Uint8Array } | null;
+  fonts?: {
+    regular: Uint8Array;
+    bold: Uint8Array;
+    hebRegular?: Uint8Array | null;
+    hebBold?: Uint8Array | null;
+  } | null;
 };
 
 function hexToRgb(hex: string | null | undefined) {
@@ -42,21 +47,101 @@ const A4 = { w: 595.28, h: 841.89 };
 const MARGIN = 50;
 const GRAY = rgb(0.42, 0.45, 0.5);
 const DARK = rgb(0.12, 0.16, 0.22);
+const HEB_CHAR = /[֐-׿]/;
+
+type Weight = "reg" | "bold";
+type Run = { text: string; font: PDFFont };
 
 export async function renderQuotePdf(input: QuotePdfInput): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   const page = doc.addPage([A4.w, A4.h]);
+
   let font: PDFFont, bold: PDFFont;
+  let hebFont: PDFFont | null = null, hebBoldFont: PDFFont | null = null;
   if (input.fonts) {
     doc.registerFontkit(fontkit);
     font = await doc.embedFont(input.fonts.regular, { subset: true });
     bold = await doc.embedFont(input.fonts.bold, { subset: true });
+    if (input.fonts.hebRegular) hebFont = await doc.embedFont(input.fonts.hebRegular, { subset: true });
+    if (input.fonts.hebBold) hebBoldFont = await doc.embedFont(input.fonts.hebBold, { subset: true });
   } else {
     font = await doc.embedFont(StandardFonts.Helvetica);
     bold = await doc.embedFont(StandardFonts.HelveticaBold);
   }
   const brand = hexToRgb(input.company.brand_color);
-  const safe = (t: string) => (input.fonts ? t : latin1Safe(t));
+
+  // --- text pipeline -------------------------------------------------------
+  // safe(): strip characters no loaded font can draw.
+  const safe = (t: string) => {
+    if (!input.fonts) return latin1Safe(t);
+    if (!hebFont) return t.replace(/[֐-׿]/g, "?");
+    return t;
+  };
+  // shape(): pdf-lib draws in logical order (left to right). For Hebrew,
+  // reverse the word order and the characters inside Hebrew words so the text
+  // reads correctly right-to-left; numbers and Latin words keep their order.
+  const shape = (t: string) => {
+    const s = safe(t);
+    if (!HEB_CHAR.test(s)) return s;
+    return s
+      .split(/(\s+)/)
+      .reverse()
+      .map((w) => {
+        if (!HEB_CHAR.test(w)) return w;
+        const rev = Array.from(w).reverse().join("");
+        // digits/Latin embedded in an RTL word keep their LTR order
+        return rev.replace(/[0-9A-Za-z]+/g, (m) => Array.from(m).reverse().join(""));
+      })
+      .join("");
+  };
+  const pickFont = (heb: boolean, w: Weight): PDFFont =>
+    heb ? (w === "bold" ? hebBoldFont ?? bold : hebFont ?? font) : (w === "bold" ? bold : font);
+  // Split an already-shaped string into same-font runs (Hebrew vs everything
+  // else) — the Hebrew face has no Latin/digit glyphs, so mixed strings must
+  // switch fonts mid-line.
+  const runsOf = (shaped: string, w: Weight): Run[] => {
+    const runs: Run[] = [];
+    let cur = "";
+    let curHeb: boolean | null = null;
+    for (const ch of shaped) {
+      const heb = HEB_CHAR.test(ch); // everything else (digits, punctuation, spaces) → Latin face
+      if (curHeb === null || heb === curHeb) {
+        cur += ch;
+        curHeb = heb;
+      } else {
+        runs.push({ text: cur, font: pickFont(curHeb, w) });
+        cur = ch;
+        curHeb = heb;
+      }
+    }
+    if (cur) runs.push({ text: cur, font: pickFont(curHeb ?? false, w) });
+    return runs;
+  };
+  const runs = (t: string, w: Weight = "reg") => runsOf(shape(t), w);
+  const widthOf = (rs: Run[], size: number) =>
+    rs.reduce((a, r) => a + r.font.widthOfTextAtSize(r.text, size), 0);
+  const draw = (rs: Run[], x: number, y: number, size: number, color = DARK) => {
+    let cx = x;
+    for (const r of rs) {
+      page.drawText(r.text, { x: cx, y, size, font: r.font, color });
+      cx += r.font.widthOfTextAtSize(r.text, size);
+    }
+  };
+  const drawRightRuns = (rs: Run[], rightX: number, y: number, size: number, color = DARK) =>
+    draw(rs, rightX - widthOf(rs, size), y, size, color);
+  // Truncate the logical string until its shaped runs fit maxWidth.
+  const fitRuns = (t: string, w: Weight, size: number, maxWidth: number): Run[] => {
+    let rs = runs(t, w);
+    if (widthOf(rs, size) <= maxWidth) return rs;
+    let s = t;
+    while (s.length > 1) {
+      s = s.slice(0, -1);
+      rs = runs(s + "…", w);
+      if (widthOf(rs, size) <= maxWidth) return rs;
+    }
+    return rs;
+  };
+  // -------------------------------------------------------------------------
 
   // Header band
   page.drawRectangle({ x: 0, y: A4.h - 8, width: A4.w, height: 8, color: brand });
@@ -83,7 +168,7 @@ export async function renderQuotePdf(input: QuotePdfInput): Promise<Uint8Array> 
     }
   }
   if (!logoDrawn) {
-    page.drawText(safe(input.company.name), { x: MARGIN, y: y - 10, size: 20, font: bold, color: DARK });
+    draw(runs(input.company.name, "bold"), MARGIN, y - 10, 20, DARK);
   }
 
   // Company block (right, right-aligned); name only repeated when a logo holds the left slot
@@ -97,11 +182,8 @@ export async function renderQuotePdf(input: QuotePdfInput): Promise<Uint8Array> 
   let cy = y;
   for (const [i, line] of companyLines.entries()) {
     const isName = logoDrawn && i === 0;
-    const f = isName ? bold : font;
     const size = isName ? 11 : 9;
-    const text = safe(line);
-    const w = f.widthOfTextAtSize(text, size);
-    page.drawText(text, { x: A4.w - MARGIN - w, y: cy, size, font: f, color: isName ? DARK : GRAY });
+    drawRightRuns(runs(line, isName ? "bold" : "reg"), A4.w - MARGIN, cy, size, isName ? DARK : GRAY);
     cy -= isName ? 16 : 13;
   }
 
@@ -114,7 +196,7 @@ export async function renderQuotePdf(input: QuotePdfInput): Promise<Uint8Array> 
   // Customer block
   y -= 70;
   page.drawText("PREPARED FOR", { x: MARGIN, y, size: 8.5, font: bold, color: GRAY });
-  page.drawText(safe(input.customer_name), { x: MARGIN, y: y - 17, size: 14, font: bold, color: DARK });
+  draw(runs(input.customer_name, "bold"), MARGIN, y - 17, 14, DARK);
 
   // Line-item table
   y -= 70;
@@ -123,24 +205,18 @@ export async function renderQuotePdf(input: QuotePdfInput): Promise<Uint8Array> 
   page.drawText("SERVICE", { x: col.item, y, size: 8.5, font: bold, color: GRAY });
   page.drawText("QTY", { x: col.qty, y, size: 8.5, font: bold, color: GRAY });
   page.drawText("UNIT PRICE", { x: col.unit, y, size: 8.5, font: bold, color: GRAY });
-  drawRight(page, "AMOUNT", col.amount, y, 8.5, bold, GRAY);
+  drawRightRuns(runsOf("AMOUNT", "bold"), col.amount, y, 8.5, GRAY);
 
   y -= 26;
   const qty = input.quantity ?? 0;
   const hasUnits = qty > 0 && (input.unit_price ?? 0) > 0;
-  const qtyText = safe(hasUnits ? `${qty}${input.unit_label ? " " + input.unit_label : ""}` : "—");
-  const unitText = safe(hasUnits ? formatMoney(input.unit_price!, input.currency) : "—");
-  page.drawText(fit(safe(input.service_name), font, 10.5, col.qty - col.item - 15), {
-    x: col.item, y, size: 10.5, font, color: DARK,
-  });
-  page.drawText(qtyText, { x: col.qty, y, size: 10.5, font, color: DARK });
-  page.drawText(unitText, { x: col.unit, y, size: 10.5, font, color: DARK });
-  drawRight(page, safe(formatMoney(input.total, input.currency)), col.amount, y, 10.5, font, DARK);
+  draw(fitRuns(input.service_name, "reg", 10.5, col.qty - col.item - 15), col.item, y, 10.5, DARK);
+  draw(runs(hasUnits ? `${qty}${input.unit_label ? " " + input.unit_label : ""}` : "—"), col.qty, y, 10.5, DARK);
+  draw(runs(hasUnits ? formatMoney(input.unit_price!, input.currency) : "—"), col.unit, y, 10.5, DARK);
+  drawRightRuns(runs(formatMoney(input.total, input.currency)), col.amount, y, 10.5, DARK);
   if (hasUnits && (input.base_price ?? 0) > 0) {
     y -= 16;
-    page.drawText(safe(`Includes base fee ${formatMoney(input.base_price!, input.currency)}`), {
-      x: col.item, y, size: 8.5, font, color: GRAY,
-    });
+    draw(runs(`Includes base fee ${formatMoney(input.base_price!, input.currency)}`), col.item, y, 8.5, GRAY);
   }
 
   // Divider + total
@@ -153,14 +229,12 @@ export async function renderQuotePdf(input: QuotePdfInput): Promise<Uint8Array> 
   });
   y -= 30;
   page.drawText("TOTAL", { x: col.unit, y, size: 11, font: bold, color: DARK });
-  drawRight(page, safe(formatMoney(input.total, input.currency)), col.amount, y, 16, bold, brand);
+  drawRightRuns(runs(formatMoney(input.total, input.currency), "bold"), col.amount, y, 16, brand);
 
   // Footer
   const footer = input.company.footer_note?.trim();
   if (footer) {
-    page.drawText(fit(safe(footer), font, 9.5, A4.w - 2 * MARGIN), {
-      x: MARGIN, y: 90, size: 9.5, font, color: GRAY,
-    });
+    draw(fitRuns(footer, "reg", 9.5, A4.w - 2 * MARGIN), MARGIN, 90, 9.5, GRAY);
   }
   page.drawLine({
     start: { x: MARGIN, y: 70 },
@@ -168,16 +242,9 @@ export async function renderQuotePdf(input: QuotePdfInput): Promise<Uint8Array> 
     thickness: 0.5,
     color: rgb(0.85, 0.87, 0.9),
   });
-  page.drawText(safe(`Generated for ${input.customer_name} on ${input.date}`), {
-    x: MARGIN, y: 54, size: 8, font, color: GRAY,
-  });
+  draw(runs(`Generated for ${input.customer_name} on ${input.date}`), MARGIN, 54, 8, GRAY);
 
   return await doc.save();
-}
-
-function drawRight(page: PDFPage, text: string, rightX: number, y: number, size: number, font: PDFFont, color: ReturnType<typeof rgb>) {
-  const w = font.widthOfTextAtSize(text, size);
-  page.drawText(text, { x: rightX - w, y, size, font, color });
 }
 
 // Replace characters Helvetica (WinAnsi/Latin-1) can't encode, so rendering
@@ -185,11 +252,4 @@ function drawRight(page: PDFPage, text: string, rightX: number, y: number, size:
 function latin1Safe(text: string): string {
   // deno-lint-ignore no-control-regex
   return text.replace(/[^\x20-\x7e\xa0-\xff–—‘’“”•…€]/g, "?");
-}
-
-function fit(text: string, font: PDFFont, size: number, maxWidth: number): string {
-  if (font.widthOfTextAtSize(text, size) <= maxWidth) return text;
-  let t = text;
-  while (t.length > 1 && font.widthOfTextAtSize(t + "…", size) > maxWidth) t = t.slice(0, -1);
-  return t + "…";
 }

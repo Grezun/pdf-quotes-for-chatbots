@@ -155,10 +155,14 @@ Static privacy policy page (required for the public listing).
   exchanges the code at `api.sendpulse.com/market-service/oauth/authorize`
   and redirects to the settings page.
 - **Unicode PDFs**: Helvetica only covers Latin-1, so Noto Sans
-  (Latin/Greek/Cyrillic) is stored in a private `assets` bucket and embedded
-  (subset) at render time; a missing font degrades to Helvetica with unknown
-  characters replaced by "?". RTL scripts (Hebrew/Arabic) are not shaped in
-  v1.
+  (Latin/Greek/Cyrillic) and Noto Sans Hebrew are stored in a private
+  `assets` bucket and embedded (subset) at render time; missing fonts degrade
+  to Helvetica with unknown characters replaced by "?".
+- **Hebrew support**: text is drawn in mixed-font runs (the Hebrew face has
+  no Latin/digit glyphs) with RTL word ordering applied by a lightweight
+  shaper — words reversed, characters within Hebrew words reversed, embedded
+  digits/Latin kept LTR. Verified against browser bidi rendering by pixel
+  measurement. Arabic (which needs joining/shaping) is still out of scope.
 - The `privacy` Edge Function was dropped (page moved to GitHub Pages). A
   `setup-assets` bootstrap function mirrors the fonts into storage.
 
