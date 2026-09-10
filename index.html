@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDF Quotes — Settings</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📄</text></svg>">
+<style>
+  :root { --accent: #2563eb; --line: #e5e7eb; --muted: #6b7280; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; margin: 0; background: #f6f7f9; color: #1f2937; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 32px 20px 80px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 28px; font-size: 14px; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 24px; margin-bottom: 20px; }
+  .card h2 { font-size: 15px; margin: 0 0 16px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
+  .grid .full { grid-column: 1 / -1; }
+  label { display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 5px; color: #374151; }
+  input[type=text], input[type=email], input[type=number], textarea {
+    width: 100%; padding: 9px 11px; border: 1px solid #d1d5db; border-radius: 7px; font-size: 14px; font-family: inherit;
+  }
+  textarea { resize: vertical; min-height: 60px; }
+  input[type=color] { width: 46px; height: 34px; padding: 2px; border: 1px solid #d1d5db; border-radius: 7px; background: #fff; }
+  .row { display: flex; align-items: center; gap: 10px; }
+  table.services { width: 100%; border-collapse: collapse; }
+  table.services th { text-align: left; font-size: 11.5px; color: var(--muted); font-weight: 600; padding: 0 8px 6px 0; }
+  table.services td { padding: 0 8px 8px 0; vertical-align: top; }
+  table.services td:last-child { padding-right: 0; width: 34px; }
+  .del { border: none; background: #fef2f2; color: #b91c1c; border-radius: 7px; width: 32px; height: 34px; cursor: pointer; font-size: 15px; }
+  .add { border: 1px dashed #9ca3af; background: none; border-radius: 7px; padding: 8px 14px; cursor: pointer; font-size: 13.5px; color: #374151; }
+  .btn { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 11px 22px; font-size: 14.5px; font-weight: 600; cursor: pointer; }
+  .btn[disabled] { opacity: .6; cursor: default; }
+  .btn.secondary { background: #fff; color: #1f2937; border: 1px solid #d1d5db; }
+  .actions { display: flex; gap: 12px; align-items: center; }
+  .flash { border-radius: 8px; padding: 10px 14px; margin-bottom: 20px; font-size: 14px; display: none; }
+  .flash.ok { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
+  .flash.err { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+  pre { background: #0f172a; color: #e2e8f0; padding: 14px 16px; border-radius: 8px; overflow-x: auto; }
+  .kv { background: #f3f4f6; border-radius: 7px; padding: 8px 12px; word-break: break-all; margin: 6px 0 14px; }
+  .hint { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
+  .logo-preview { max-height: 48px; max-width: 160px; display: block; margin-bottom: 8px; }
+  ol.steps { padding-left: 20px; font-size: 14px; line-height: 1.7; }
+  #gate { text-align: center; padding: 80px 20px; }
+  footer { text-align: center; font-size: 12px; color: var(--muted); margin-top: 30px; }
+  footer a { color: var(--muted); }
+  @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="gate"><h1>PDF Quotes for Chatbots</h1><p class="sub" id="gate-msg">Loading your settings…</p></div>
+
+  <div id="app" hidden>
+    <h1>PDF Quotes for Chatbots</h1>
+    <p class="sub">Configure your branding and prices. Your chatbot will generate quotes with these details.</p>
+
+    <div class="flash ok" id="flash-ok"></div>
+    <div class="flash err" id="flash-err"></div>
+
+    <form id="form">
+      <div class="card">
+        <h2>Company details</h2>
+        <div class="grid">
+          <div><label>Company name *</label><input type="text" name="company_name" required maxlength="120"></div>
+          <div><label>Email</label><input type="email" name="email" maxlength="120"></div>
+          <div><label>Phone</label><input type="text" name="phone" maxlength="40"></div>
+          <div><label>Website</label><input type="text" name="website" maxlength="120"></div>
+          <div class="full"><label>Address</label><input type="text" name="address" maxlength="200"></div>
+          <div>
+            <label>Logo (PNG or JPG, max 1 MB)</label>
+            <img class="logo-preview" id="logo-preview" alt="" hidden>
+            <input type="file" name="logo" accept="image/png,image/jpeg">
+          </div>
+          <div>
+            <label>Brand color</label>
+            <div class="row"><input type="color" name="brand_color" value="#2563eb"><span class="hint">Used for accents on the PDF</span></div>
+          </div>
+          <div><label>Currency label</label><input type="text" name="currency" maxlength="8" value="USD"><div class="hint">Shown after amounts, e.g. USD, EUR, ₴, ₪</div></div>
+          <div class="full"><label>Footer note</label><textarea name="footer_note" maxlength="300"></textarea></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Services &amp; prices</h2>
+        <table class="services">
+          <thead><tr><th style="width:38%">Service name</th><th>Base price</th><th>Price per unit</th><th>Unit label</th><th></th></tr></thead>
+          <tbody id="svc-body"></tbody>
+        </table>
+        <button type="button" class="add" id="add-svc">+ Add service</button>
+        <div class="hint" style="margin-top:10px">Price = base price + price per unit × quantity sent by the bot. Leave "per unit" empty for fixed-price services.</div>
+      </div>
+
+      <div class="actions">
+        <button class="btn" type="submit" id="save-btn">Save settings</button>
+        <button class="btn secondary" type="button" id="preview-btn">Preview sample PDF</button>
+      </div>
+    </form>
+
+    <div class="card" style="margin-top:28px">
+      <h2>Connect your SendPulse chatbot</h2>
+      <ol class="steps">
+        <li>In your bot flow, after collecting the customer's name and service, add an <b>API Request</b> element.</li>
+        <li>Set method <b>POST</b> and this URL:<div class="kv"><code id="endpoint"></code></div></li>
+        <li>Set the request body (JSON), using your flow's variables:</li>
+      </ol>
+      <pre id="example"></pre>
+      <ol class="steps" start="4">
+        <li><code>quantity</code> and <code>price</code> are optional — send <code>price</code> to override the calculated total.</li>
+        <li>In the <b>Save values</b> tab, map response key <code>pdf_url</code> to a variable (e.g. <code>pdf_url</code>), and optionally <code>price</code>.</li>
+        <li>In the next message element write: <i>"{{name}}, your quote is ready ({{price}}): {{pdf_url}}"</i></li>
+      </ol>
+      <div class="hint">Your API key is included in the body above. Keep this page's link private — anyone with it can change your settings.</div>
+    </div>
+
+    <footer><a href="privacy.html">Privacy policy</a> · Support: office.xpera@gmail.com</footer>
+  </div>
+</div>
+
+<script>
+const API_BASE = "https://emmbigtxifbfuojbtqiu.supabase.co/functions/v1";
+const token = new URLSearchParams(location.search).get("token");
+const $ = (id) => document.getElementById(id);
+const form = $("form");
+
+function svcRow(svc = {}) {
+  const tr = document.createElement("tr");
+  tr.innerHTML = `
+    <td><input type="text" name="svc_name" maxlength="120" placeholder="e.g. Deep cleaning"></td>
+    <td><input type="number" name="svc_base" min="0" step="0.01" value="0"></td>
+    <td><input type="number" name="svc_unit" min="0" step="0.01" placeholder="—"></td>
+    <td><input type="text" name="svc_label" maxlength="20" placeholder="e.g. m²"></td>
+    <td><button type="button" class="del" title="Remove">×</button></td>`;
+  tr.querySelector('[name=svc_name]').value = svc.name ?? "";
+  tr.querySelector('[name=svc_base]').value = svc.base_price ?? 0;
+  if (svc.unit_price) tr.querySelector('[name=svc_unit]').value = svc.unit_price;
+  tr.querySelector('[name=svc_label]').value = svc.unit_label ?? "";
+  tr.querySelector(".del").onclick = () => {
+    if ($("svc-body").children.length > 1) tr.remove();
+  };
+  return tr;
+}
+
+function flash(ok, msg) {
+  const el = ok ? $("flash-ok") : $("flash-err");
+  el.textContent = msg;
+  el.style.display = "block";
+  setTimeout(() => { el.style.display = "none"; }, 5000);
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+async function load() {
+  if (!token) {
+    $("gate-msg").textContent = "Missing settings link. Open the app from your SendPulse account to get here.";
+    return;
+  }
+  let res;
+  try {
+    res = await fetch(`${API_BASE}/settings?token=${encodeURIComponent(token)}`);
+  } catch {
+    $("gate-msg").textContent = "Could not reach the server. Please try again in a minute.";
+    return;
+  }
+  if (!res.ok) {
+    $("gate-msg").textContent = "This settings link is invalid or the app was uninstalled. Open the app again from your SendPulse account.";
+    return;
+  }
+  const d = await res.json();
+  const s = d.settings;
+  for (const k of ["company_name", "email", "phone", "website", "address", "currency", "footer_note"]) {
+    form.elements[k].value = s[k] ?? "";
+  }
+  if (/^#[0-9a-f]{6}$/i.test(s.brand_color ?? "")) {
+    form.elements.brand_color.value = s.brand_color;
+    document.documentElement.style.setProperty("--accent", s.brand_color);
+  }
+  const body = $("svc-body");
+  body.textContent = "";
+  for (const svc of (s.services?.length ? s.services : [{}])) body.appendChild(svcRow(svc));
+  if (d.logo_url) { $("logo-preview").src = d.logo_url; $("logo-preview").hidden = false; }
+  $("endpoint").textContent = d.quote_endpoint;
+  $("example").textContent = JSON.stringify(
+    { api_key: d.api_key, customer_name: "{{name}}", service: "{{service}}", quantity: "{{quantity}}" },
+    null, 2);
+  $("gate").hidden = true;
+  $("app").hidden = false;
+}
+
+$("add-svc").onclick = () => $("svc-body").appendChild(svcRow());
+
+form.onsubmit = async (e) => {
+  e.preventDefault();
+  const btn = $("save-btn");
+  btn.disabled = true;
+  try {
+    const fd = new FormData(form);
+    fd.set("token", token);
+    const res = await fetch(`${API_BASE}/settings`, { method: "POST", body: fd });
+    const d = await res.json().catch(() => ({}));
+    if (res.ok && d.ok) {
+      flash(true, "Settings saved.");
+      document.documentElement.style.setProperty("--accent", form.elements.brand_color.value);
+      form.elements.logo.value = "";
+      load();
+    } else {
+      flash(false, d.error || "Saving failed, please try again.");
+    }
+  } catch {
+    flash(false, "Could not reach the server. Please try again.");
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+$("preview-btn").onclick = async () => {
+  const btn = $("preview-btn");
+  btn.disabled = true;
+  btn.textContent = "Generating…";
+  try {
+    const res = await fetch(`${API_BASE}/settings/preview?token=${encodeURIComponent(token)}`);
+    const d = await res.json().catch(() => ({}));
+    if (res.ok && d.preview_url) window.open(d.preview_url, "_blank");
+    else flash(false, d.error || "Preview failed. Save your settings first, then try again.");
+  } catch {
+    flash(false, "Could not reach the server. Please try again.");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Preview sample PDF";
+  }
+};
+
+load();
+</script>
+</body>
+</html>
