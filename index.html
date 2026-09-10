@@ -17,8 +17,8 @@
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
   .grid .full { grid-column: 1 / -1; }
   label { display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 5px; color: #374151; }
-  input[type=text], input[type=email], input[type=number], textarea {
-    width: 100%; padding: 9px 11px; border: 1px solid #d1d5db; border-radius: 7px; font-size: 14px; font-family: inherit;
+  input[type=text], input[type=email], input[type=number], textarea, select {
+    width: 100%; padding: 9px 11px; border: 1px solid #d1d5db; border-radius: 7px; font-size: 14px; font-family: inherit; background: #fff;
   }
   textarea { resize: vertical; min-height: 60px; }
   input[type=color] { width: 46px; height: 34px; padding: 2px; border: 1px solid #d1d5db; border-radius: 7px; background: #fff; }
@@ -78,6 +78,14 @@
             <div class="row"><input type="color" name="brand_color" value="#2563eb"><span class="hint">Used for accents on the PDF</span></div>
           </div>
           <div><label>Currency label</label><input type="text" name="currency" maxlength="8" value="USD"><div class="hint">Shown after amounts, e.g. USD, EUR, ₴, ₪</div></div>
+          <div><label>PDF language</label>
+            <select name="doc_lang">
+              <option value="auto">Auto (Hebrew if company name is Hebrew)</option>
+              <option value="en">English</option>
+              <option value="he">עברית (right-to-left)</option>
+            </select>
+            <div class="hint">Hebrew gives a fully right-to-left document with Hebrew labels</div>
+          </div>
           <div class="full"><label>Footer note</label><textarea name="footer_note" maxlength="300"></textarea></div>
         </div>
       </div>
@@ -171,6 +179,7 @@ async function load() {
   for (const k of ["company_name", "email", "phone", "website", "address", "currency", "footer_note"]) {
     form.elements[k].value = s[k] ?? "";
   }
+  form.elements.doc_lang.value = ["auto", "en", "he"].includes(s.doc_lang) ? s.doc_lang : "auto";
   if (/^#[0-9a-f]{6}$/i.test(s.brand_color ?? "")) {
     form.elements.brand_color.value = s.brand_color;
     document.documentElement.style.setProperty("--accent", s.brand_color);
