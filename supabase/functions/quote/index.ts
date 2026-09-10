@@ -4,7 +4,7 @@
 // → 200 { pdf_url, price, quote_id }  |  4xx { error }
 import { json, serviceClient } from "../_shared/db.ts";
 import { computeTotal, formatMoney, type Service } from "../_shared/pricing.ts";
-import { renderQuotePdf } from "../_shared/pdf.ts";
+import { isRtlDoc, renderQuotePdf } from "../_shared/pdf.ts";
 import { loadFonts } from "../_shared/fonts.ts";
 
 const SIGNED_URL_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days
@@ -104,6 +104,7 @@ Deno.serve(async (req: Request) => {
     currency: settings.currency,
     quote_number: quoteNumber,
     date,
+    rtl: isRtlDoc(settings.doc_lang, settings.company_name),
     fonts,
   });
 

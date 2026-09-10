@@ -28,6 +28,8 @@ export type QuotePdfInput = {
   currency: string;
   quote_number: string;
   date: string; // already formatted, e.g. "10 Sep 2026"
+  // Full right-to-left document: Hebrew labels, mirrored layout.
+  rtl?: boolean;
   fonts?: {
     regular: Uint8Array;
     bold: Uint8Array;
@@ -35,6 +37,13 @@ export type QuotePdfInput = {
     hebBold?: Uint8Array | null;
   } | null;
 };
+
+// 'he' → RTL, 'en' → LTR, 'auto' (default) → RTL when the company name is Hebrew.
+export function isRtlDoc(docLang: string | null | undefined, companyName: string): boolean {
+  if (docLang === "he") return true;
+  if (docLang === "en") return false;
+  return /[֐-׿]/.test(companyName ?? "");
+}
 
 function hexToRgb(hex: string | null | undefined) {
   const m = /^#?([0-9a-f]{6})$/i.exec((hex ?? "").trim());
@@ -51,6 +60,31 @@ const HEB_CHAR = /[֐-׿]/;
 
 type Weight = "reg" | "bold";
 type Run = { text: string; font: PDFFont };
+
+const LABELS = {
+  en: {
+    quote: "QUOTE",
+    preparedFor: "PREPARED FOR",
+    service: "SERVICE",
+    qty: "QTY",
+    unitPrice: "UNIT PRICE",
+    amount: "AMOUNT",
+    total: "TOTAL",
+    includesBase: (fee: string) => `Includes base fee ${fee}`,
+    generated: (name: string, date: string) => `Generated for ${name} on ${date}`,
+  },
+  he: {
+    quote: "הצעת מחיר",
+    preparedFor: "הוכן עבור",
+    service: "שירות",
+    qty: "כמות",
+    unitPrice: "מחיר ליחידה",
+    amount: "סכום",
+    total: 'סה"כ',
+    includesBase: (fee: string) => `כולל מחיר בסיס ${fee}`,
+    generated: (name: string, date: string) => `הופק עבור ${name} בתאריך ${date}`,
+  },
+};
 
 export async function renderQuotePdf(input: QuotePdfInput): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
@@ -143,12 +177,22 @@ export async function renderQuotePdf(input: QuotePdfInput): Promise<Uint8Array> 
   };
   // -------------------------------------------------------------------------
 
+  // RTL document mode: Hebrew labels + mirrored layout. Only meaningful when
+  // the Hebrew font actually loaded.
+  const rtl = !!input.rtl && hebFont !== null;
+  const L = LABELS[rtl ? "he" : "en"];
+  // "start" = reading start (left in LTR, right in RTL); "end" = the opposite.
+  const drawStart = (rs: Run[], y: number, size: number, color = DARK) =>
+    rtl ? drawRightRuns(rs, A4.w - MARGIN, y, size, color) : draw(rs, MARGIN, y, size, color);
+  const drawEnd = (rs: Run[], y: number, size: number, color = DARK) =>
+    rtl ? draw(rs, MARGIN, y, size, color) : drawRightRuns(rs, A4.w - MARGIN, y, size, color);
+
   // Header band
   page.drawRectangle({ x: 0, y: A4.h - 8, width: A4.w, height: 8, color: brand });
 
   let y = A4.h - 60;
 
-  // Logo (left) — fit into 140×56; without a logo the company name takes its place
+  // Logo at the reading start; without a logo the company name takes its place
   let logoDrawn = false;
   if (input.company.logoBytes?.length) {
     try {
@@ -156,10 +200,11 @@ export async function renderQuotePdf(input: QuotePdfInput): Promise<Uint8Array> 
         ? await doc.embedJpg(input.company.logoBytes)
         : await doc.embedPng(input.company.logoBytes);
       const scale = Math.min(140 / img.width, 56 / img.height, 1);
+      const w = img.width * scale;
       page.drawImage(img, {
-        x: MARGIN,
+        x: rtl ? A4.w - MARGIN - w : MARGIN,
         y: y - img.height * scale + 10,
-        width: img.width * scale,
+        width: w,
         height: img.height * scale,
       });
       logoDrawn = true;
@@ -168,10 +213,10 @@ export async function renderQuotePdf(input: QuotePdfInput): Promise<Uint8Array> 
     }
   }
   if (!logoDrawn) {
-    draw(runs(input.company.name, "bold"), MARGIN, y - 10, 20, DARK);
+    drawStart(runs(input.company.name, "bold"), y - 10, 20, DARK);
   }
 
-  // Company block (right, right-aligned); name only repeated when a logo holds the left slot
+  // Company contact block at the reading end
   const companyLines = [
     logoDrawn ? input.company.name : null,
     input.company.address,
@@ -183,40 +228,49 @@ export async function renderQuotePdf(input: QuotePdfInput): Promise<Uint8Array> 
   for (const [i, line] of companyLines.entries()) {
     const isName = logoDrawn && i === 0;
     const size = isName ? 11 : 9;
-    drawRightRuns(runs(line, isName ? "bold" : "reg"), A4.w - MARGIN, cy, size, isName ? DARK : GRAY);
+    drawEnd(runs(line, isName ? "bold" : "reg"), cy, size, isName ? DARK : GRAY);
     cy -= isName ? 16 : 13;
   }
 
   // Title
   y -= 110;
-  page.drawText("QUOTE", { x: MARGIN, y, size: 30, font: bold, color: brand });
-  const meta = `#${input.quote_number}   ·   ${input.date}`;
-  page.drawText(meta, { x: MARGIN, y: y - 20, size: 10, font, color: GRAY });
+  drawStart(runs(L.quote, "bold"), y, 30, brand);
+  drawStart(runs(`#${input.quote_number}   ·   ${input.date}`), y - 20, 10, GRAY);
 
   // Customer block
   y -= 70;
-  page.drawText("PREPARED FOR", { x: MARGIN, y, size: 8.5, font: bold, color: GRAY });
-  draw(runs(input.customer_name, "bold"), MARGIN, y - 17, 14, DARK);
+  drawStart(runs(L.preparedFor, "bold"), y, 8.5, GRAY);
+  drawStart(runs(input.customer_name, "bold"), y - 17, 14, DARK);
 
-  // Line-item table
+  // Line-item table. LTR columns: service 50↦, qty 330↦, unit 400↦, amount ↤545.
+  // RTL mirrors each column across the page center.
   y -= 70;
-  const col = { item: MARGIN, qty: 330, unit: 400, amount: A4.w - MARGIN };
+  const QTY_X = 330, UNIT_X = 400;
+  const putService = (rs: Run[], yy: number, size: number, color = DARK) =>
+    rtl ? drawRightRuns(rs, A4.w - MARGIN, yy, size, color) : draw(rs, MARGIN, yy, size, color);
+  const putQty = (rs: Run[], yy: number, size: number, color = DARK) =>
+    rtl ? drawRightRuns(rs, A4.w - QTY_X, yy, size, color) : draw(rs, QTY_X, yy, size, color);
+  const putUnit = (rs: Run[], yy: number, size: number, color = DARK) =>
+    rtl ? drawRightRuns(rs, A4.w - UNIT_X, yy, size, color) : draw(rs, UNIT_X, yy, size, color);
+  const putAmount = (rs: Run[], yy: number, size: number, color = DARK) =>
+    rtl ? draw(rs, MARGIN, yy, size, color) : drawRightRuns(rs, A4.w - MARGIN, yy, size, color);
+
   page.drawRectangle({ x: MARGIN - 10, y: y - 6, width: A4.w - 2 * MARGIN + 20, height: 24, color: brand, opacity: 0.08 });
-  page.drawText("SERVICE", { x: col.item, y, size: 8.5, font: bold, color: GRAY });
-  page.drawText("QTY", { x: col.qty, y, size: 8.5, font: bold, color: GRAY });
-  page.drawText("UNIT PRICE", { x: col.unit, y, size: 8.5, font: bold, color: GRAY });
-  drawRightRuns(runsOf("AMOUNT", "bold"), col.amount, y, 8.5, GRAY);
+  putService(runs(L.service, "bold"), y, 8.5, GRAY);
+  putQty(runs(L.qty, "bold"), y, 8.5, GRAY);
+  putUnit(runs(L.unitPrice, "bold"), y, 8.5, GRAY);
+  putAmount(runs(L.amount, "bold"), y, 8.5, GRAY);
 
   y -= 26;
   const qty = input.quantity ?? 0;
   const hasUnits = qty > 0 && (input.unit_price ?? 0) > 0;
-  draw(fitRuns(input.service_name, "reg", 10.5, col.qty - col.item - 15), col.item, y, 10.5, DARK);
-  draw(runs(hasUnits ? `${qty}${input.unit_label ? " " + input.unit_label : ""}` : "—"), col.qty, y, 10.5, DARK);
-  draw(runs(hasUnits ? formatMoney(input.unit_price!, input.currency) : "—"), col.unit, y, 10.5, DARK);
-  drawRightRuns(runs(formatMoney(input.total, input.currency)), col.amount, y, 10.5, DARK);
+  putService(fitRuns(input.service_name, "reg", 10.5, QTY_X - MARGIN - 15), y, 10.5, DARK);
+  putQty(runs(hasUnits ? `${qty}${input.unit_label ? " " + input.unit_label : ""}` : "—"), y, 10.5, DARK);
+  putUnit(runs(hasUnits ? formatMoney(input.unit_price!, input.currency) : "—"), y, 10.5, DARK);
+  putAmount(runs(formatMoney(input.total, input.currency)), y, 10.5, DARK);
   if (hasUnits && (input.base_price ?? 0) > 0) {
     y -= 16;
-    draw(runs(`Includes base fee ${formatMoney(input.base_price!, input.currency)}`), col.item, y, 8.5, GRAY);
+    putService(runs(L.includesBase(formatMoney(input.base_price!, input.currency))), y, 8.5, GRAY);
   }
 
   // Divider + total
@@ -228,13 +282,14 @@ export async function renderQuotePdf(input: QuotePdfInput): Promise<Uint8Array> 
     color: rgb(0.85, 0.87, 0.9),
   });
   y -= 30;
-  page.drawText("TOTAL", { x: col.unit, y, size: 11, font: bold, color: DARK });
-  drawRightRuns(runs(formatMoney(input.total, input.currency), "bold"), col.amount, y, 16, brand);
+  putUnit(runs(L.total, "bold"), y, 11, DARK);
+  putAmount(runs(formatMoney(input.total, input.currency), "bold"), y, 16, brand);
 
   // Footer
   const footer = input.company.footer_note?.trim();
   if (footer) {
-    draw(fitRuns(footer, "reg", 9.5, A4.w - 2 * MARGIN), MARGIN, 90, 9.5, GRAY);
+    const rs = fitRuns(footer, "reg", 9.5, A4.w - 2 * MARGIN);
+    drawStart(rs, 90, 9.5, GRAY);
   }
   page.drawLine({
     start: { x: MARGIN, y: 70 },
@@ -242,7 +297,7 @@ export async function renderQuotePdf(input: QuotePdfInput): Promise<Uint8Array> 
     thickness: 0.5,
     color: rgb(0.85, 0.87, 0.9),
   });
-  draw(runs(`Generated for ${input.customer_name} on ${input.date}`), MARGIN, 54, 8, GRAY);
+  drawStart(runs(L.generated(input.customer_name, input.date)), 54, 8, GRAY);
 
   return await doc.save();
 }

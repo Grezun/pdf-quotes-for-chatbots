@@ -7,7 +7,7 @@
 //   POST /settings (multipart)→ { ok } | { error }   (fields + optional logo)
 //   GET  /settings/preview?token=… → { preview_url } (signed, 1 h)
 import { functionsBase, serviceClient } from "../_shared/db.ts";
-import { renderQuotePdf } from "../_shared/pdf.ts";
+import { isRtlDoc, renderQuotePdf } from "../_shared/pdf.ts";
 import { loadFonts } from "../_shared/fonts.ts";
 import type { Service } from "../_shared/pricing.ts";
 
@@ -152,6 +152,7 @@ async function save(
     address: str("address", 200) || null,
     brand_color: brandColor,
     currency: str("currency", 8) || "USD",
+    doc_lang: ["auto", "en", "he"].includes(str("doc_lang", 4)) ? str("doc_lang", 4) : "auto",
     footer_note: str("footer_note", 300),
     services,
     logo_path: logoPath,
@@ -206,6 +207,7 @@ async function preview(
     currency: s.currency ?? "USD",
     quote_number: "Q-PREVIEW",
     date: new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
+    rtl: isRtlDoc(s.doc_lang, s.company_name),
     fonts: await loadFonts(db),
   });
 
