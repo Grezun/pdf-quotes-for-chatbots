@@ -15,11 +15,17 @@ Runs entirely on Supabase: Postgres + private Storage buckets + Edge Functions.
 
 | Function | Purpose |
 |---|---|
-| `install` | SendPulse Install URL — creates account + settings, returns settings link |
-| `uninstall` | SendPulse Uninstall URL — deactivates, purges files |
-| `quote` | Called by the chatbot; returns `{ pdf_url, price, quote_id }` |
-| `settings` | Business-facing settings page (token link) + logo upload + preview |
-| `privacy` | Privacy policy page for the listing |
+| `install` | SendPulse Install/Login URL — exchanges the code, creates the account, redirects to the settings page |
+| `uninstall` | SendPulse Uninstall URL — deactivates, purges stored files |
+| `quote` | Called by the chatbot's API Request element; returns `{ pdf_url, price, quote_id }` |
+| `settings` | Token-authenticated JSON API for the settings page (read, save, logo upload, PDF preview) |
+| `setup-assets` | One-shot bootstrap that mirrors Noto Sans fonts into the private `assets` bucket |
+
+The business-facing **settings page** and the **privacy policy** are static
+pages in `web/`, hosted on GitHub Pages
+(https://grezun.github.io/pdf-quotes-for-chatbots/) — Supabase intentionally
+refuses to serve HTML on `*.supabase.co` (anti-phishing), so the UI lives on
+Pages and talks to the `settings` function over CORS.
 
 ## Env secrets (Supabase → Edge Functions → Secrets)
 

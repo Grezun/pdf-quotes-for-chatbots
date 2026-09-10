@@ -143,7 +143,26 @@ Static privacy policy page (required for the public listing).
    Request element would → download and eyeball the PDF.
 3. Real chatbot test in Alex's SendPulse account before submitting review.
 
-## 9. Out of scope (v1)
+## 9. Implementation addenda (discovered during build, 2026-09-10)
+
+- **Supabase refuses to serve HTML** on `*.supabase.co` (functions *and*
+  storage return `text/plain` + sandbox CSP — anti-phishing). The settings
+  page and privacy policy therefore live as static pages in `web/`, hosted on
+  GitHub Pages (`https://grezun.github.io/pdf-quotes-for-chatbots/`); the
+  `settings` Edge Function is a CORS-open, token-authenticated JSON API.
+- The SendPulse Install URL is a **login flow**: a browser GET with
+  `?code=…&lang=…` on install and on every later "open app" click; the app
+  exchanges the code at `api.sendpulse.com/market-service/oauth/authorize`
+  and redirects to the settings page.
+- **Unicode PDFs**: Helvetica only covers Latin-1, so Noto Sans
+  (Latin/Greek/Cyrillic) is stored in a private `assets` bucket and embedded
+  (subset) at render time; a missing font degrades to Helvetica with unknown
+  characters replaced by "?". RTL scripts (Hebrew/Arabic) are not shaped in
+  v1.
+- The `privacy` Edge Function was dropped (page moved to GitHub Pages). A
+  `setup-assets` bootstrap function mirrors the fonts into storage.
+
+## 10. Out of scope (v1)
 
 Multiple templates, drag-and-drop designer, AI content, currency conversion,
 e-signatures, per-customer portals, analytics dashboards.
