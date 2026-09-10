@@ -22,8 +22,35 @@ function errorPage(message: string, status = 400): Response {
 
 Deno.serve(async (req: Request) => {
   const url = new URL(req.url);
-  const code = url.searchParams.get("code");
   const db = serviceClient();
+
+  // The docs are ambiguous about how the code arrives (GET query vs POST
+  // body), so accept it from anywhere — and log the request shape once so a
+  // mismatch is diagnosable from the function logs.
+  let bodyText = "";
+  let bodyParams: Record<string, string> = {};
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    bodyText = await req.text();
+    try {
+      const j = JSON.parse(bodyText);
+      if (j && typeof j === "object") {
+        bodyParams = Object.fromEntries(
+          Object.entries(j).map(([k, v]) => [k, String(v)]),
+        );
+      }
+    } catch {
+      bodyParams = Object.fromEntries(new URLSearchParams(bodyText).entries());
+    }
+  }
+  console.log("install request", JSON.stringify({
+    method: req.method,
+    query: Object.fromEntries(url.searchParams.entries()),
+    contentType: req.headers.get("content-type"),
+    bodyKeys: Object.keys(bodyParams),
+    bodyPreview: bodyText.slice(0, 300),
+  }));
+
+  const code = url.searchParams.get("code") ?? bodyParams.code ?? null;
 
   // Dev backdoor: create a test install without SendPulse, guarded by a secret.
   if (!code && DEV_INSTALL_SECRET && url.searchParams.get("dev") === DEV_INSTALL_SECRET) {
@@ -32,6 +59,11 @@ Deno.serve(async (req: Request) => {
   }
 
   if (!code) return errorPage("Missing authorization code.");
+
+  if (!Deno.env.get("SP_APP_ID") || !Deno.env.get("SP_APP_SECRET")) {
+    console.error("SP_APP_ID / SP_APP_SECRET secrets are not set");
+    return errorPage("The app is not fully configured yet (developer: set SP_APP_ID and SP_APP_SECRET).", 500);
+  }
 
   const creds = await exchangeCode(code);
   if (!creds) {
